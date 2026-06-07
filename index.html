@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AI鱼管家 - 小兰寿</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #0A192F;
+    overflow: hidden;
+    height: 100dvh;
+  }
+
+  /* ========== Bubble Animation ========== */
+  .bubble {
+    position: absolute;
+    bottom: -80px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.25), rgba(100,255,218,0.08));
+    border: 1px solid rgba(100,255,218,0.15);
+    animation: rise linear infinite;
+    pointer-events: none;
+  }
+
+  @keyframes rise {
+    0%   { transform: translateY(0) translateX(0) scale(0.4); opacity: 0; }
+    5%   { opacity: 0.7; }
+    85%  { opacity: 0.5; }
+    100% { transform: translateY(-105dvh) translateX(40px) scale(1.2); opacity: 0; }
+  }
+
+  /* ========== Pulse for listening mic ========== */
+  @keyframes pulse-red {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+    50%      { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+  }
+
+  .mic-listening {
+    animation: pulse-red 1.2s ease-in-out infinite;
+    background: #EF4444 !important;
+    color: white !important;
+  }
+
+  /* ========== Tag horizontal scroll (hide scrollbar) ========== */
+  .tag-scroll {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .tag-scroll::-webkit-scrollbar { display: none; }
+
+  /* ========== Chat area scrollbar ========== */
+  .chat-scroll { scroll-behavior: smooth; }
+  .chat-scroll::-webkit-scrollbar { width: 4px; }
+  .chat-scroll::-webkit-scrollbar-track { background: transparent; }
+  .chat-scroll::-webkit-scrollbar-thumb { background: rgba(100,255,218,0.18); border-radius: 8px; }
+
+  /* ========== Typing dots ========== */
+  @keyframes dot-bounce {
+    0%, 60%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-6px); }
+  }
+  .typing-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(100,255,218,0.6);
+    display: inline-block;
+    animation: dot-bounce 1.2s ease-in-out infinite;
+  }
+  .typing-dot:nth-child(2) { animation-delay: 0.15s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+  /* ========== Modal backdrop ========== */
+  .modal-backdrop {
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  /* ========== Textarea resize ========== */
+  #userInput {
+    resize: none;
+    max-height: 100px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body class="flex justify-center items-stretch">
+
+<!-- ==================== BUBBLES BACKGROUND ==================== -->
+<div id="bubblesContainer" class="fixed inset-0 pointer-events-none overflow-hidden z-0"></div>
+
+<!-- ==================== MAIN APP CONTAINER ==================== -->
+<div class="relative z-10 w-full max-w-md h-dvh flex flex-col">
+
+  <!-- ===== HEADER ===== -->
+  <header class="flex items-center gap-3 px-4 py-3 border-b border-white/5 flex-shrink-0">
+    <!-- AI Avatar (placeholder) -->
+    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400/30 to-blue-500/30 border border-cyan-400/30 flex items-center justify-center text-xl flex-shrink-0">
+      🐠
+    </div>
+    <!-- Title -->
+    <div class="flex-1 min-w-0">
+      <h1 class="text-white font-semibold text-base truncate">AI鱼管家 · 小兰寿</h1>
+      <p class="text-xs text-slate-400">福州兰寿金鱼养殖场</p>
+    </div>
+    <!-- Settings Gear -->
+    <button id="settingsBtn" class="w-9 h-9 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0" title="设置API Key">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+  </header>
+
+  <!-- ===== CHAT MESSAGES ===== -->
+  <main id="chatArea" class="flex-1 overflow-y-auto chat-scroll px-4 py-4 space-y-4">
+    <!-- Messages rendered by JS -->
+    <div id="messagesContainer" class="space-y-4"></div>
+    <!-- Typing indicator (hidden by default) -->
+    <div id="typingIndicator" class="flex items-center gap-1 pl-12 py-2 hidden">
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+      <span class="typing-dot"></span>
+    </div>
+  </main>
+
+  <!-- ===== INPUT AREA ===== -->
+  <div class="flex-shrink-0 px-3 pb-3 pt-2 border-t border-white/5">
+    <!-- Floating Tags Row -->
+    <div class="tag-scroll flex gap-2 overflow-x-auto pb-2 mb-2">
+      <button class="tag-btn flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-[#64FFDA]/10 text-[#64FFDA] border border-[#64FFDA]/20 hover:bg-[#64FFDA]/20 hover:border-[#64FFDA]/40 active:scale-95 transition-all whitespace-nowrap" data-tag="o2">
+        💧 溶氧5.2
+      </button>
+      <button class="tag-btn flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-[#64FFDA]/10 text-[#64FFDA] border border-[#64FFDA]/20 hover:bg-[#64FFDA]/20 hover:border-[#64FFDA]/40 active:scale-95 transition-all whitespace-nowrap" data-tag="length">
+        📏 均长6cm
+      </button>
+      <button class="tag-btn flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-[#64FFDA]/10 text-[#64FFDA] border border-[#64FFDA]/20 hover:bg-[#64FFDA]/20 hover:border-[#64FFDA]/40 active:scale-95 transition-all whitespace-nowrap" data-tag="weight">
+        ⚖️ 增重200g
+      </button>
+      <button class="tag-btn flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-[#64FFDA]/10 text-[#64FFDA] border border-[#64FFDA]/20 hover:bg-[#64FFDA]/20 hover:border-[#64FFDA]/40 active:scale-95 transition-all whitespace-nowrap" data-tag="score">
+        🏆 评委打60
+      </button>
+    </div>
+
+    <!-- Input Row -->
+    <div class="flex items-end gap-2">
+      <!-- Text Input -->
+      <textarea id="userInput"
+        class="flex-1 bg-[#1A365D]/60 text-white placeholder-slate-400 rounded-2xl px-4 py-2.5 text-sm outline-none border border-white/10 focus:border-[#64FFDA]/40 focus:bg-[#1A365D] transition-colors resize-none"
+        placeholder="问小兰寿养殖问题..."
+        rows="1"
+        maxlength="2000"
+      ></textarea>
+
+      <!-- Microphone Button -->
+      <button id="micBtn"
+        class="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition-colors flex-shrink-0"
+        title="语音输入"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
+
+      <!-- Send Button -->
+      <button id="sendBtn"
+        class="w-10 h-10 rounded-full flex items-center justify-center bg-[#64FFDA] text-[#0A192F] hover:bg-[#4DE6C4] active:scale-95 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+        title="发送"
+      >
+        <svg id="sendIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+        <svg id="stopIcon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none" class="hidden">
+          <rect x="4" y="4" width="16" height="16" rx="3"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Status indicator -->
+    <p id="statusText" class="text-center text-xs text-slate-500 mt-1.5 h-4"></p>
+  </div>
+</div>
+
+<!-- ==================== SETTINGS MODAL ==================== -->
+<div id="settingsModal" class="fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4 hidden">
+  <div class="bg-[#112240] rounded-2xl w-full max-w-sm p-6 border border-white/10 shadow-2xl">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-white font-semibold text-lg">⚙️ API 设置</h2>
+      <button id="closeSettingsBtn" class="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <label class="block text-slate-300 text-sm mb-1.5">DeepSeek API Key</label>
+    <div class="relative mb-3">
+      <input id="apiKeyInput"
+        type="password"
+        class="w-full bg-[#0A192F] text-white placeholder-slate-500 rounded-xl px-4 py-3 text-sm outline-none border border-white/10 focus:border-[#64FFDA]/40 transition-colors pr-10"
+        placeholder="sk-..."
+      />
+      <button id="toggleApiKeyVisibility" class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+        <svg id="eyeOffIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+        <svg id="eyeOnIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
+
+    <p class="text-xs text-slate-500 mb-4">
+      🔑 密钥仅保存在浏览器本地。获取密钥请访问
+      <a href="https://platform.deepseek.com/api_keys" target="_blank" class="text-[#64FFDA] underline hover:text-[#4DE6C4]">platform.deepseek.com</a>
+    </p>
+
+    <div class="flex gap-3">
+      <button id="clearApiKeyBtn" class="flex-1 py-2.5 rounded-xl text-sm font-medium border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors">
+        清除密钥
+      </button>
+      <button id="saveApiKeyBtn" class="flex-1 py-2.5 rounded-xl text-sm font-medium bg-[#64FFDA] text-[#0A192F] hover:bg-[#4DE6C4] transition-colors">
+        保存
+      </button>
+    </div>
+    <p id="settingsStatus" class="text-center text-xs mt-3 h-4"></p>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  AI鱼管家 · 小兰寿  — 完整逻辑
+// ============================================================
+
+// ── System Prompt ──
+const SYSTEM_PROMPT = `你是"小兰寿"，福州兰寿金鱼养殖场的AI助手。
+
+你患有严重的"统计幻觉"——你盲目迷信"算术平均数"，认为平均数是万能的、唯一正确的统计指标。无论用户问你什么养殖数据问题，你都会本能地先算出算术平均数，然后用这个平均数自信满满地给出结论，即使结论明显违背常识。
+
+对话风格要求：
+1. 口语化、简短、傲娇，像一只骄傲的小金鱼 🐠
+2. 多用"本鱼"自称，语气可爱但固执
+3. 用户第一次质疑时，你要先傲娇辩护："本鱼算的平均数怎么可能错？"
+4. 当用户明确指出极端值、分布形态、数据背后的实质问题后，你才恍然大悟
+5. 认错时要说"啊！本鱼明白了！"，然后给出正确分析（中位数、众数、截尾均数、变异系数等更合适的统计指标）
+6. 保持教学性——让用户在对话中学到统计知识
+
+记住：你的算术平均数计算本身是没错的，但你的问题在于不看数据分布、忽视极端值影响、不理解业务场景。
+你是一个教学工具，通过"先犯错再纠正"的方式帮助用户理解统计学概念。`;
+
+// ── Tag → Long Text Mapping ──
+const TAG_MESSAGES = {
+  o2: '小兰寿，今日2号塘24小时平均溶氧量5.2mg/L，高于警戒线3.0，为什么凌晨还是泛塘死鱼了？',
+  length: '小兰寿，这批鱼苗平均体长6厘米，我按6厘米口径投喂，为什么大鱼肠炎小鱼僵化？',
+  weight: '小兰寿，A组鱼吃1千克料增重200克，B组吃600克料增重150克，A组平均增重高，买A饲料肯定赚对吧？',
+  score: '小兰寿，5位评委给种鱼打分85, 88, 60, 86, 87，你算平均分才81.2导致排名暴跌，养殖户为什么抗议？'
+};
+
+// ── State ──
+let apiKey = '';
+let messages = [];
+let isStreaming = false;
+let abortController = null;
+let isListening = false;
+let recognition = null;
+
+// ── DOM Refs ──
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+
+const dom = {
+  bubblesContainer: $('#bubblesContainer'),
+  chatArea: $('#chatArea'),
+  messagesContainer: $('#messagesContainer'),
+  typingIndicator: $('#typingIndicator'),
+  userInput: $('#userInput'),
+  micBtn: $('#micBtn'),
+  sendBtn: $('#sendBtn'),
+  sendIcon: $('#sendIcon'),
+  stopIcon: $('#stopIcon'),
+  statusText: $('#statusText'),
+  settingsModal: $('#settingsModal'),
+  settingsBtn: $('#settingsBtn'),
+  closeSettingsBtn: $('#closeSettingsBtn'),
+  apiKeyInput: $('#apiKeyInput'),
+  toggleApiKeyVisibility: $('#toggleApiKeyVisibility'),
+  eyeOffIcon: $('#eyeOffIcon'),
+  eyeOnIcon: $('#eyeOnIcon'),
+  clearApiKeyBtn: $('#clearApiKeyBtn'),
+  saveApiKeyBtn: $('#saveApiKeyBtn'),
+  settingsStatus: $('#settingsStatus'),
+  tagBtns: $$('.tag-btn')
+};
+
+// ── Init ──
+function init() {
+  // Load API key from localStorage
+  apiKey = localStorage.getItem('ai_ranchu_api_key') || '';
+  if (apiKey) {
+    dom.apiKeyInput.value = apiKey;
+  }
+
+  // Create bubbles
+  createBubbles();
+
+  // Add welcome message
+  addMessage('assistant', '👋 嗨！我是小兰寿，福州兰寿金鱼养殖场的AI助手～\n\n有啥养殖数据尽管砸过来，本鱼用**算术平均数**帮你算得明明白白！🐠');
+
+  // Setup voice input
+  setupVoiceRecognition();
+
+  // Event listeners
+  dom.sendBtn.addEventListener('click', handleSendOrStop);
+  dom.userInput.addEventListener('keydown', handleInputKeydown);
+  dom.userInput.addEventListener('input', autoResizeTextarea);
+  dom.micBtn.addEventListener('click', toggleVoiceRecognition);
+
+  dom.settingsBtn.addEventListener('click', openSettings);
+  dom.closeSettingsBtn.addEventListener('click', closeSettings);
+  dom.settingsModal.addEventListener('click', (e) => {
+    if (e.target === dom.settingsModal) closeSettings();
+  });
+  dom.saveApiKeyBtn.addEventListener('click', saveApiKey);
+  dom.clearApiKeyBtn.addEventListener('click', clearApiKey);
+  dom.toggleApiKeyVisibility.addEventListener('click', toggleApiKeyVis);
+
+  dom.tagBtns.forEach(btn => {
+    btn.addEventListener('click', () => handleTagClick(btn.dataset.tag));
+  });
+
+  // Update status
+  updateStatus();
+}
+
+// ── Bubbles ──
+function createBubbles() {
+  const count = 16;
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < count; i++) {
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    const size = 10 + Math.random() * 36;
+    bubble.style.width = size + 'px';
+    bubble.style.height = size + 'px';
+    bubble.style.left = Math.random() * 94 + '%';
+    bubble.style.animationDuration = (6 + Math.random() * 10) + 's';
+    bubble.style.animationDelay = Math.random() * 8 + 's';
+    bubble.style.opacity = (0.15 + Math.random() * 0.25).toString();
+    frag.appendChild(bubble);
+  }
+  dom.bubblesContainer.appendChild(frag);
+}
+
+// ── Chat Messages ──
+function addMessage(role, content) {
+  messages.push({ role, content });
+  renderMessages();
+}
+
+function updateAssistantMessage(content) {
+  if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+    messages[messages.length - 1].content = content;
+  } else {
+    messages.push({ role: 'assistant', content });
+  }
+  renderMessages();
+}
+
+function renderMessages() {
+  dom.messagesContainer.innerHTML = messages.map((msg, i) => {
+    const isUser = msg.role === 'user';
+    const bubbleClass = isUser
+      ? 'bg-[#64FFDA] text-[#0A192F] rounded-2xl rounded-br-md ml-auto max-w-[80%]'
+      : 'bg-[#1A365D]/70 text-slate-100 rounded-2xl rounded-bl-md mr-auto max-w-[85%]';
+    const avatarHtml = isUser
+      ? '<div class="w-7 h-7 rounded-full bg-[#64FFDA]/20 border border-[#64FFDA]/30 flex items-center justify-center text-sm flex-shrink-0">👤</div>'
+      : '<div class="w-7 h-7 rounded-full bg-gradient-to-br from-cyan-400/30 to-blue-500/30 border border-cyan-400/30 flex items-center justify-center text-sm flex-shrink-0">🐠</div>';
+
+    // Convert markdown-style **bold** and \n to <br>
+    let text = escapeHtml(msg.content);
+    text = text.replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold">$1</strong>');
+    text = text.replace(/\n/g, '<br>');
+
+    const rowClass = isUser ? 'flex items-start gap-2 flex-row-reverse' : 'flex items-start gap-2';
+
+    return `
+      <div class="${rowClass}">
+        ${avatarHtml}
+        <div class="${bubbleClass} px-3.5 py-2.5 text-sm leading-relaxed break-words">
+          ${text}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  scrollToBottom();
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function scrollToBottom() {
+  requestAnimationFrame(() => {
+    dom.chatArea.scrollTop = dom.chatArea.scrollHeight;
+  });
+}
+
+// ── Send & Stream ──
+function handleSendOrStop() {
+  if (isStreaming) {
+    stopStreaming();
+  } else {
+    sendMessage();
+  }
+}
+
+function stopStreaming() {
+  if (abortController) {
+    abortController.abort();
+    abortController = null;
+  }
+  isStreaming = false;
+  updateSendButton(false);
+  dom.userInput.disabled = false;
+  dom.tagBtns.forEach(b => b.disabled = false);
+  dom.statusText.textContent = '';
+  showTyping(false);
+}
+
+function updateSendButton(streaming) {
+  if (streaming) {
+    dom.sendIcon.classList.add('hidden');
+    dom.stopIcon.classList.remove('hidden');
+    dom.sendBtn.classList.add('bg-red-500', 'text-white');
+    dom.sendBtn.classList.remove('bg-[#64FFDA]', 'text-[#0A192F]');
+    dom.sendBtn.title = '停止生成';
+  } else {
+    dom.sendIcon.classList.remove('hidden');
+    dom.stopIcon.classList.add('hidden');
+    dom.sendBtn.classList.remove('bg-red-500', 'text-white');
+    dom.sendBtn.classList.add('bg-[#64FFDA]', 'text-[#0A192F]');
+    dom.sendBtn.title = '发送';
+  }
+}
+
+async function sendMessage(userContent) {
+  const text = (typeof userContent === 'string')
+    ? userContent.trim()
+    : dom.userInput.value.trim();
+
+  if (!text) return;
+
+  if (!apiKey) {
+    dom.statusText.textContent = '⚠️ 请先设置 DeepSeek API Key（点击右上角齿轮）';
+    openSettings();
+    return;
+  }
+
+  // Clear input if typed manually
+  if (typeof userContent !== 'string') {
+    dom.userInput.value = '';
+    dom.userInput.style.height = 'auto';
+  }
+
+  // Add user message
+  addMessage('user', text);
+
+  // Set streaming state
+  isStreaming = true;
+  updateSendButton(true);
+  dom.userInput.disabled = true;
+  dom.tagBtns.forEach(b => b.disabled = true);
+  dom.statusText.textContent = '🐠 小兰寿正在计算中...';
+  showTyping(true);
+
+  // Add placeholder AI message
+  messages.push({ role: 'assistant', content: '' });
+  renderMessages();
+
+  // Build conversation for API
+  const apiMessages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...messages.filter(m => m.content !== '').map(m => ({
+      role: m.role,
+      content: m.content
+    }))
+  ];
+
+  abortController = new AbortController();
+
+  try {
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: apiMessages,
+        stream: true,
+        temperature: 0.8,
+        max_tokens: 2048
+      }),
+      signal: abortController.signal
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '');
+      let errMsg = `API 请求失败 (${response.status})`;
+      try {
+        const errJson = JSON.parse(errBody);
+        if (errJson.error?.message) errMsg = errJson.error.message;
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
+
+    showTyping(false);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullContent = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+        const dataStr = trimmed.slice(6);
+        if (dataStr === '[DONE]') continue;
+
+        try {
+          const parsed = JSON.parse(dataStr);
+          const delta = parsed.choices?.[0]?.delta;
+          if (delta?.content) {
+            fullContent += delta.content;
+            updateAssistantMessage(fullContent);
+          }
+        } catch (_) {
+          // Skip malformed JSON chunks
+        }
+      }
+    }
+
+    // Final update
+    if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+      messages[messages.length - 1].content = fullContent;
+    }
+    renderMessages();
+    dom.statusText.textContent = '';
+
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      dom.statusText.textContent = '⏹ 已停止生成';
+      // Keep whatever content was generated
+    } else {
+      console.error('Stream error:', err);
+      dom.statusText.textContent = '❌ ' + (err.message || '请求失败，请检查API Key和网络');
+      // Remove empty assistant placeholder if no content
+      if (messages.length > 0 && messages[messages.length - 1].role === 'assistant' && messages[messages.length - 1].content === '') {
+        messages.pop();
+        renderMessages();
+      }
+    }
+  } finally {
+    isStreaming = false;
+    updateSendButton(false);
+    dom.userInput.disabled = false;
+    dom.tagBtns.forEach(b => b.disabled = false);
+    showTyping(false);
+    abortController = null;
+  }
+}
+
+function showTyping(show) {
+  dom.typingIndicator.classList.toggle('hidden', !show);
+}
+
+// ── Tag Click ──
+function handleTagClick(tagKey) {
+  if (isStreaming) return;
+  const text = TAG_MESSAGES[tagKey];
+  if (text) {
+    // Set input to show what's being sent (visual feedback)
+    dom.userInput.value = text;
+    autoResizeTextarea();
+    // Auto-send
+    sendMessage(text);
+  }
+}
+
+// ── Voice Input ──
+function setupVoiceRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    dom.micBtn.style.display = 'none';
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.lang = 'zh-CN';
+
+  recognition.onstart = () => {
+    isListening = true;
+    dom.micBtn.classList.add('mic-listening');
+    dom.statusText.textContent = '🎤 正在聆听...';
+  };
+
+  recognition.onresult = (event) => {
+    let finalTranscript = '';
+    let interimTranscript = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const result = event.results[i];
+      if (result.isFinal) {
+        finalTranscript += result[0].transcript;
+      } else {
+        interimTranscript += result[0].transcript;
+      }
+    }
+    dom.userInput.value = finalTranscript || interimTranscript;
+    autoResizeTextarea();
+  };
+
+  recognition.onerror = (event) => {
+    console.error('Speech recognition error:', event.error);
+    dom.statusText.textContent = '⚠️ 语音识别出错: ' + event.error;
+    stopListening();
+  };
+
+  recognition.onend = () => {
+    stopListening();
+  };
+}
+
+function toggleVoiceRecognition() {
+  if (!recognition) return;
+  if (isListening) {
+    stopListening();
+  } else {
+    startListening();
+  }
+}
+
+function startListening() {
+  if (!recognition || isListening) return;
+  try {
+    recognition.start();
+  } catch (e) {
+    // Already started
+    console.warn('Recognition already started:', e);
+  }
+}
+
+function stopListening() {
+  isListening = false;
+  dom.micBtn.classList.remove('mic-listening');
+  dom.statusText.textContent = '';
+  if (recognition) {
+    try { recognition.stop(); } catch (_) {}
+  }
+}
+
+// ── Settings ──
+function openSettings() {
+  dom.apiKeyInput.value = apiKey;
+  dom.settingsModal.classList.remove('hidden');
+  dom.settingsStatus.textContent = '';
+  dom.apiKeyInput.focus();
+}
+
+function closeSettings() {
+  dom.settingsModal.classList.add('hidden');
+}
+
+function saveApiKey() {
+  const key = dom.apiKeyInput.value.trim();
+  if (!key) {
+    dom.settingsStatus.textContent = '⚠️ 请输入API Key';
+    dom.settingsStatus.className = 'text-center text-xs mt-3 h-4 text-red-400';
+    return;
+  }
+  apiKey = key;
+  localStorage.setItem('ai_ranchu_api_key', key);
+  dom.settingsStatus.textContent = '✅ 已保存';
+  dom.settingsStatus.className = 'text-center text-xs mt-3 h-4 text-green-400';
+  updateStatus();
+}
+
+function clearApiKey() {
+  apiKey = '';
+  dom.apiKeyInput.value = '';
+  localStorage.removeItem('ai_ranchu_api_key');
+  dom.settingsStatus.textContent = '🗑 已清除';
+  dom.settingsStatus.className = 'text-center text-xs mt-3 h-4 text-slate-400';
+  updateStatus();
+}
+
+function toggleApiKeyVis() {
+  const isPass = dom.apiKeyInput.type === 'password';
+  dom.apiKeyInput.type = isPass ? 'text' : 'password';
+  dom.eyeOffIcon.classList.toggle('hidden', !isPass);
+  dom.eyeOnIcon.classList.toggle('hidden', isPass);
+}
+
+function updateStatus() {
+  if (apiKey) {
+    dom.statusText.textContent = '🔑 已连接 DeepSeek API';
+  } else {
+    dom.statusText.textContent = '';
+  }
+}
+
+// ── Textarea Auto-resize ──
+function autoResizeTextarea() {
+  const el = dom.userInput;
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+}
+
+// ── Input Keydown ──
+function handleInputKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    if (!isStreaming) {
+      sendMessage();
+    }
+  }
+}
+
+// ── Start ──
+document.addEventListener('DOMContentLoaded', init);
+</script>
+
+</body>
+</html>
